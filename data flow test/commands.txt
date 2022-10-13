@@ -1,0 +1,98 @@
+gcloud services enable pubsub
+gcloud services enable bigquery
+gcloud services enable run.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable dataflow.googleapis.com
+gcloud services enable bigtable.googleapis.com
+gcloud services enable bigtableadmin.googleapis.com
+#gcloud services enable bigtabletableadmin.googleapis.com
+
+#create the Dockerfile to build the streaming client container
+echo "FROM python:3.10.6-bullseye
+RUN apt update
+RUN apt upgrade -y
+RUN apt install -y netcat
+RUN mkdir /home/user
+COPY requirements.txt /home/user/
+COPY stream_client.py /home/user/
+COPY data-account.json /home/user/
+COPY run.sh /home/user/
+RUN chmod 777 /home/user/run.sh
+RUN pip3 install -r /home/user/requirements.txt
+CMD ["/home/user/run.sh"]" > Dockerfile
+
+#create the shell script needed to start netcat as the listener and the python script
+echo "#!/bin/bash
+/bin/netcat -l 8080 &
+python3 /home/user/stream_client.py" > run.sh
+
+# Create the requirements.txt file for the container
+echo "websockets
+google.cloud.pubsub
+google.auth.oauthlib" > requirements.txt
+
+#Create the Python code file so it can be added to the container
+echo "from google import pubsub_v1
+from google.oauth2 import service_account
+import websockets
+import asyncio
+
+project='test-01'
+topic='data-test'
+uri= 'wss://ws.coincap.io/trades/binance'
+
+svc_credentials = service_account.Credentials.from_service_account_file('/home/user/data-account.json', scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+def publish(data, project, pubsubTopic):
+    publisher = pubsub_v1.PublisherClient(credentials=svc_credentials)
+    topicPath=publisher.topic_path(project, pubsubTopic)
+    pubsubMsg=pubsub_v1.types.PubsubMessage(data=data.encode('utf-8'))
+    publisher.publish(topic=topicPath, messages=[pubsubMsg]) 
+
+async def main(uri, project,topic):
+    count=0
+    async with websockets.connect(uri) as websocket:
+        while(True):
+            msg = await websocket.recv()
+            count+=1
+            if count ==500:
+                #print(msg)
+                publish(msg, project, topic)
+                count=0
+            else:
+                continue
+
+asyncio.run(main(uri, project, topic))" > stream_client.py
+
+# Reset needed org policies set by standard Google CFF Terraform configs
+gcloud org-policies reset constraints/iam.disableServiceAccountKeyCreation --project=test-01
+gcloud org-policies reset constraints/run.allowedIngress --project=test-01
+gcloud secrets create data-test-creds --data-file=data-account.json --locations=europe-west1 --replication-policy=user-managed
+gcloud iam service-accounts create data-account1 
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:data-account@test-01.iam.gserviceaccount.com --role roles/bigquery.admin
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:data-account@test-01.iam.gserviceaccount.com --role roles/pubsub.publisher
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:data-account@test-01.iam.gserviceaccount.com --role roles/source.reader
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:data-account@test-01.iam.gserviceaccount.com --role roles/dataflow.admin
+bq mk --dataset --location=europe-west1 --label=purpose:data-testing test-01:data_test
+bq mk --table --label purpose:data-testing test-01:data_test.crypto-trades-raw subscription_name:STRING,message_id:STRING,publish_time:TIMESTAMP,data:STRING,attributes:STRING
+gcloud pubsub topics create data-test
+gcloud pubsub subscriptions create data-test-sub --topic=data-test --topic-project=test-01 --bigquery-table=test-01:data_test.crypto-trades-raw --write-metadata --use-topic-schema=false 
+gcloud artifacts repositories create data-test-repo --repository-format=docker --location=europe-west1
+
+#build the docker image and add it to the registry (note: these commands need to be run in the directory where the files above have been created).
+chmod 774 stream_client.py
+chmod 774 requirements.txt
+gcloud builds submit --tag europe-west1-docker.pkg.dev/test-01/data-test-repo/stream-client:1.0.0
+
+gsutil mb 
+
+gcloud bigtable instances create test-data-test-bt-inst-01 --project=test-01 --cluster-config=id=test-data-test-bt-clus-01,zone=europe-west1-b,nodes=1 --display-name="Data Test instance 01" --cluster-storage-type=HDD
+# gcloud bigtable instances delete test-data-test-bt-inst-01 --project=test-01
+
+# The below command does not work as the websockets keepalive responses are not passed to the python code for some reason best known to GCP. In any case, this causes a fatal exception and the python process exits with a non-zero exit code. :-(
+# "gcloud run deploy stream-client --region=europe-west1 --allow-unauthenticated --ingress=internal --service-account=data-account@test-01.iam.gserviceaccount.com --platform=managed --image=europe-west1-docker.pkg.dev/test-01/data-test-repo/stream-client:1.0.0"
+# Instead, run this command to create a GCE instance with the python container running in it.
+gcloud compute instances create-with-container test-data-test-01 --zone=europe-west1-b --service-account=data-account@test-01.iam.gserviceaccount.com --scopes=default,cloud-source-repos-ro,pubsub --container-image=europe-west1-docker.pkg.dev/test-01/data-test-repo/stream-client:1.0.0 
+

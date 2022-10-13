@@ -1,0 +1,58 @@
+# PoC for creating a VPC, then deploying a Compute Engine instance in that VPC, setting up a CLoud Storage bucket and then accessing the 
+# bucket from the CE instance using a FUSE based agent (GCS FUSE). The commands run in a Cloud Shell or local shell session until the note
+# to run some commands in an SSH session on the CE instance. Finally back to the Cloud Shell or local shell session to delete the created
+# resources.
+#
+# First you need to create the security context for running Cloud SDK command line tools. Run "gcloud init" and select an account
+# that has the permisions to create VPCs, storage buckets, and compute engine instances.
+#
+# The below commands assume that there is already a project in your org named "test-project-01". If not, change the project
+# argument in the below networking commands to an existing project in your org.
+
+#Create a VPC and add a firewall rule to allow incoming IAP traffic so SSH and RDP access work
+gcloud compute networks create test-vpc-01 --project=test-project-01 --subnet-mode=auto --mtu=1460 --bgp-routing-mode=global
+gcloud compute --project=test-project-01 firewall-rules create allow-ingress-from-iap --direction=INGRESS --priority=1000 --network=test-vpc-01 --action=ALLOW --rules=tcp:22,tcp:3389 --source-ranges=35.235.240.0/20
+
+# Create a Cloud Storage bucket using the gsutil command
+gsutil mb -l europe-west1 -c standard gs://test-csb-01
+
+# Create a service account for the compute instance and give it a role so that it can access the new CS bucket. 
+gcloud iam service-accounts create test-sa-ce-test-01 --description "Service account for the test CE instance" --display-name "test-sa-ce-test-01"
+gcloud projects add-iam-policy-binding test-project-01 --member="serviceAccount:test-sa-ce-test-01@test-project-01.iam.gserviceaccount.com" --role="roles/storage.owner"
+
+# N.B. In addition to this, the user account you log in to the CE instance with (normally your org account) also needs to have read/write access to the test-csb-01 bucket, s
+# the role(s) granting access can be directly on the storage bucket or anywhere in the resource hierarchy above it. You will need one of:
+# - roles/storage.admin
+# - roles/storage.objectAdmin
+# - roles/storage.objectCreator *AND* roles/storage.objectViewer.
+
+# Create a Compute Engine instance using the gcloud command and have it running using the service account we created above.
+gcloud compute instances create test-ce-test-01 --machine-type e2-small --zone europe-west1-b --network test-vpc-01 --image-project debian-cloud --image-family=debian-10 --service-account test-sa-ce-test-01@ctest-project-01.iam.gserviceaccount.com --scopes storage-full
+
+# Now open an SSH connection to the CE instance
+
+# Run the below commands in the SSH session, which will installs the gcsfuse client.
+export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
+echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo apt-get update
+sudo apt-get install gcsfuse -y
+
+mkdir ~/gcs-bucket
+gcsfuse test-csb-01 ~/gcs-bucket
+touch ~/gcs-bucket/hello-bucket.txt
+echo -e 'Hello Bucket!' > ~/gcs-bucket/hello-bucket.txt
+
+# You can now look in the Cloud Console to find the created file and see the content.
+
+# Now we unmount the GCS bucket
+fusermount -u /path/to/mount/point
+
+# Now close the SSH connection
+
+# Now we delete the Compute Engine instance, delete the object in the bucket, delete the Cloud Storage bucket itself and finally delete the service account
+gcloud compute instances delete test-ce-test-01 --zone europe-west1-b --delete-disks all --quiet
+gsutil rm gs://test-csb-01/*
+gsutil rb gs://test-csb-01
+gcloud iam service-accounts delete test-sa-ce-test-01@test-project-01.iam.gserviceaccount.com --quiet
+

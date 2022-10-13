@@ -1,0 +1,9 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-nginx:$_WEB_VER', 'Dockerfile-nginx']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-nginx']
+ - name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-db:$_DB_VER', 'Dockerfile-db']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-db']

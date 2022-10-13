@@ -1,0 +1,9 @@
+GKE small cluster
+
+export CLUSTER_NAME=test-gke-cluster-01
+gcloud container clusters create $CLUSTER_NAME --logging=SYSTEM,WORKLOAD --monitoring=SYSTEM,API_SERVER,CONTROLLER_MANAGER,SCHEDULER --machine-type=e2-small	--max-pods-per-node 12 --region=europe-west1 --num-nodes=1 --enable-ip-alias
+
+gcloud container clusters delete $CLUSTER_NAME --region europe-west1
+
+-----------------------------------
+

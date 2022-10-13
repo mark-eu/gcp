@@ -1,0 +1,41 @@
+# Cloud build to create a K8s cluster in a new project. This includes all the required dependencies, except the needed changes to the policies as described below,
+# for a Project created in a new 
+#
+# There are (at least) three constraints (policies) that need to be set for the Project to over-write the Cloud Foundation Fabric settings:
+# "Require OS Login" should not be enforced
+# "Define allowed external IPs for VM instances" should be allowed for All
+# "Restrict Load Balancer Creation Based on Load Balancer Types" should allow "EXTERNAL_NETWORK_TCP_UDP"
+gcloud config set project test-01
+gcloud services enable cloudidentity.googleapis.com
+gcloud services enable cloudresourcemanager.googleapis.com
+gcloud services enable container.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud components install kubectl
+gcloud components install beta
+gcloud services list --available --filter=registry
+gcloud services enable artifactregistry.googleapis.com
+gcloud services list --available --filter=kubernetes
+gcloud services enable container.googleapis.com
+gcloud artifacts repositories create test-docker-reg-01 --repository-format=docker --location europe-west1
+gcloud compute networks create test-k8s --project=test-01 --subnet-mode=custom --mtu=1500 --bgp-routing-mode=regional
+gcloud compute networks subnets create test-k8s-01 --project=test-01 --description="K8s test-01 network" --range=10.120.0.0/22 --stack-type=IPV4_IPV6 --ipv6-access-type=EXTERNAL --network=test-k8s --region=europe-west1
+gcloud compute firewall-rules create allow-iap --project=test-01 --direction=INGRESS --priority=1000 --network=test-k8s --action=ALLOW --rules=tcp:22 --source-ranges=35.235.240.0/20
+gcloud iam service-accounts create k8s-compute-engine-admin --display-name="K8s Compute Engine Admin"
+gcloud identity groups create gke-security-groups@gcp.company.com --organization="gcp.company.com"
+gcloud projects add-iam-policy-binding test-01 --member="serviceAccount:k8s-compute-engine-admin@test-01.iam.gserviceaccount.com" --role="roles/compute.admin"
+gcloud projects add-iam-policy-binding test-01 --member="serviceAccount:k8s-compute-engine-admin@test-01.iam.gserviceaccount.com" --role="roles/compute.instanceAdmin.v1"
+gcloud projects add-iam-policy-binding test-01 --member="serviceAccount:k8s-compute-engine-admin@test-01.iam.gserviceaccount.com" --role="roles/compute.networkAdmin"
+gcloud projects add-iam-policy-binding test-01 --member="serviceAccount:k8s-compute-engine-admin@test-01.iam.gserviceaccount.com" --role="roles/artifactregistry.reader"
+gcloud beta container --project "test-01" clusters create "test-k8s-01" --region "europe-west1" --no-enable-basic-auth --cluster-version "1.22.8-gke.202" --release-channel "regular" --machine-type "g1-small" --image-type "COS_CONTAINERD" --disk-type "pd-standard" --disk-size "46" --service-account k8s-compute-engine-admin@test-01.iam.gserviceaccount.com --node-labels service=shopping-cart,type=development --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/devstorage.read_only","https://www.googleapis.com/auth/logging.write","https://www.googleapis.com/auth/monitoring","https://www.googleapis.com/auth/servicecontrol","https://www.googleapis.com/auth/service.management.readonly","https://www.googleapis.com/auth/trace.append" --max-pods-per-node "32" --num-nodes "1" --logging=SYSTEM,WORKLOAD --monitoring=SYSTEM --enable-ip-alias --network "projects/test-01/global/networks/test-k8s" --subnetwork "projects/test-01/regions/europe-west1/subnetworks/test-k8s-01" --enable-intra-node-visibility --default-max-pods-per-node "32" --enable-dataplane-v2 --no-enable-master-authorized-networks --addons HorizontalPodAutoscaling,HttpLoadBalancing,NodeLocalDNS,GcePersistentDiskCsiDriver --enable-autoupgrade --enable-autorepair --max-surge-upgrade 1 --max-unavailable-upgrade 0 --enable-managed-prometheus --workload-pool "test-01.svc.id.goog" --security-group "gke-security-groups@gcp.company.com"
+gcloud beta builds triggers create cloud-source-repositories --repo=test-repo-01 --branch-pattern=master --build-config=cloudbuild.yaml --name=test-trigger-nginx-01
+gcloud container clusters get-credentials test-k8s-01 --region=europe-west1
+# Now copy the contents of T:\.kube\config to cygwin ~/.kube/config
+kubectl create deployment test-k8s-deployment-nginx --image=europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-nginx:1.1.0
+kubectl apply -f 
+kubectl set image deployment/test-k8s-deployment-nginx test-nginx=europe-west1-docker.pkg.dev/test-01/test-docker-reg-01/test-nginx:1.1.0
+kubectl get services
+kubectl get deployments
+kubectl delete svc test-nginx-service
+kubectl delete deployment test-k8s-deployment-nginx
+gcloud container clusters list
+gcloud container clusters delete test-k8s-01 --zone europe-west1

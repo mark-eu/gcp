@@ -1,0 +1,35 @@
+Attribute Mapping
+Credentials can include attributes that provide information about an identity. You can use attribute mapping to grant access to a subset of identities. Learn more.
+
+issuer and allowed audience - https://gitlab.company.com
+
+attribute.sub
+Google 1 *
+Supported keys: "google.subject", "google.groups", "attribute.custom_attribute".
+assertion.sub
+OIDC 1 *
+Value must be a CEL expression, for example, "assertion.sub".
+attribute.actor
+Google 2 *
+Supported keys: "google.subject", "google.groups", "attribute.custom_attribute".
+assertion.actor
+OIDC 2 *
+Value must be a CEL expression, for example, "assertion.sub".
+google.subject
+Google 3
+Supported keys: "google.subject", "google.groups", "attribute.custom_attribute".
+assertion.sub
+OIDC 3 *
+Value must be a CEL expression, for example, "assertion.sub".
+attribute.repository
+Google 4 *
+Supported keys: "google.subject", "google.groups", "attribute.custom_attribute".
+assertion.project_path
+OIDC 4 *
+Value must be a CEL expression, for example, "assertion.sub".
+attribute.ref
+Google 5 *
+Supported keys: "google.subject", "google.groups", "attribute.custom_attribute".
+assertion.ref
+OIDC 5 *
+Value must be a CEL expression, for example, "assertion.sub".

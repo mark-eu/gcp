@@ -1,0 +1,11 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'europe-west1-docker.pkg.dev/project-01/test-registry-01/nginx:1.0', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west1-docker.pkg.dev/project-01/test-registry-01/nginx']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'gcloud'
+  args: ['compute', 'instances', 'create-with-container', 'test-nginx-vm-1', '--container-image', 'europe-west1-docker.pkg.dev/project-01/test-registry-01/nginx:1.0', '--subnet', 'test-vpc-01', '--tags=http-server', '--zone', 'europe-west1-b', '--service-account', 'test-compute@project-01.iam.gserviceaccount.com']
+  env:
+  - 'CLOUDSDK_COMPUTE_REGION=europe-west1'
+  - 'CLOUDSDK_COMPUTE_ZONE=europe-west1-b'

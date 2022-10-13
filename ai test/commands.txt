@@ -1,0 +1,130 @@
+gcloud services enable cloudfunctions.googleapis.com 
+gcloud services enable pubsub.googleapis.com
+gcloud services enable logging.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable storage-component.googleapis.com
+gcloud services enable storage.googleapis.com
+gcloud services enable vision.googleapis.com
+gcloud services enable appengine.googleapis.com
+gcloud services enable firestore.googleapis.com
+gcloud services enable orgpolicy.googleapis.com
+
+# Reset annoying org policies set by Google CFF Terraform configs
+gcloud org-policies reset constraints/iam.disableServiceAccountKeyCreation --project=test-01
+
+gcloud services list --available --filter="name:googleapis.com"
+
+gsutil mb -b on -l europe-west1 -c standard gs://ai-test-code
+gsutil mb -b on -l europe-west1 -c standard gs://ai-test-images
+
+gcloud iam service-accounts create image-ai-account 
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:image-ai-account@test-01.iam.gserviceaccount.com --role roles/storage.admin 
+gcloud projects add-iam-policy-binding test-01 --member serviceAccount:image-ai-account@test-01.iam.gserviceaccount.com --role roles/firebase.admin
+gcloud pubsub topics create image-ai-test 
+gcloud app create --region=europe-west3
+gcloud firestore databases create --region=europe-west3
+
+gcloud functions delete get-image --region=europe-west1 --quiet
+gcloud functions delete analyze-image --region=europe-west1 --quiet
+
+echo "import base64
+import requests
+import google.cloud.storage as gs
+from PIL import Image
+from io import BytesIO
+
+apiKey='29435784-61e2a118a3ca68296fccb9b81'
+urlBase='https://pixabay.com/api'
+
+def get_image (event, context):
+    #find an image based on the message content
+    imageQuery = base64.b64decode(event['data']).decode('utf-8')
+    response = requests.get(urlBase, params={'key':apiKey, 'safesearch':'true', 'q':imageQuery})
+    jsonData=response.json()
+    imageUrl=jsonData['hits'][0]['largeImageURL']
+    #Now get the actual image from its URL
+    imageResponse=requests.get(imageUrl)
+    image = Image.open(BytesIO(imageResponse.content))
+    image.save('/tmp/'+imageUrl.split('/')[-1])
+    #write to cloud storage
+    gsClient = gs.Client()
+    bucket = gsClient.get_bucket('ai-test-images')
+    blob = bucket.blob(imageUrl.split('/')[-1])
+    blob.metadata={'search term':imageQuery}
+    imageFile=open('/tmp/'+imageUrl.split('/')[-1], 'r+b')
+    blob.upload_from_file(imageFile)" > main.py
+
+echo "Pillow
+requests
+google.cloud.storage" > requirements.txt
+
+zip get_image.zip main.py requirements.txt
+rm main.py
+rm requirements.txt
+gsutil cp get_image.zip gs://ai-test-code
+rm get_image.zip
+
+echo "import base64
+from google.cloud import vision_v1
+from google.cloud import firestore
+from google.cloud import storage
+
+def analyze_image (event, context):
+    # Create an image source object and add the URL as a property of that object (file name from the GCS new object event triggering the cloud function)
+    file = event
+    imgSrc=vision_v1.ImageSource()
+    imgSrc.image_uri='gs://ai-test-images/'+file['name']
+    #Create an image object and add the image source object to it
+    image=vision_v1.Image()
+    image.source=imgSrc
+    # Create and configure a feature object
+    feature=vision_v1.Feature()
+    feature.max_results=30
+    feature.type=vision_v1.Feature.Type['LABEL_DETECTION']
+    # Create an annotate image request object and add the image and feature objects to it
+    request=vision_v1.AnnotateImageRequest()
+    request.features=[feature]
+    request.image=image
+    # Create an Image Annotator object Call the batch annotate images method with a single annotate image request
+    vClient=vision_v1.ImageAnnotatorClient()
+    response = vClient.batch_annotate_images(requests=[request])
+    labels=[]
+    for item in response.responses[0].label_annotations:
+        if item.score >= 0.9:
+            labels.insert(0, [item.description, item.score])
+    labels.reverse()     
+    # Now get the original search term from the GCS object metadata
+    gcsClient = storage.Client()
+    bucket = gcsClient.get_bucket('ai-test-images')
+    blob = bucket.blob(file['name'])
+    blob.patch()
+    origQuery=blob.metadata['search term']
+    # Now update the firestore DB with the data
+    dbClient = firestore.Client(project='test-01')
+    collectionRef = dbClient.collection(u'ai-test-collection')
+    documentId = file['name']
+    docData = {}
+    docData['Original query']=origQuery
+    itemCount=1
+    for item in labels:
+        docData['Annotation '+str(itemCount)]=item[0]
+        docData['Annotation '+str(itemCount)+' probability']=item[1]
+        itemCount+=1
+    collectionRef.add(document_id= documentId, document_data = docData)" > main.py
+
+echo "google.cloud.vision
+google.cloud.firestore
+google.cloud.storage" > requirements.txt
+
+zip analyze_image.zip main.py requirements.txt
+rm main.py
+rm requirements.txt
+gsutil cp analyze_image.zip gs://ai-test-code
+rm analyze_image.zip
+
+
+# This can help to find the list of supported event types "gcloud functions event-types list"
+gcloud functions deploy get-image --entry-point=get_image --region=europe-west1 --service-account=image-ai-account@test-01.iam.gserviceaccount.com --runtime python310 --source gs://ai-test-code/get_image.zip --trigger-event google.pubsub.topic.publish --trigger-resource image-ai-test
+gcloud functions deploy analyze-image --entry-point=analyze_image --region=europe-west1 --service-account=image-ai-account@test-01.iam.gserviceaccount.com --runtime python310 --source gs://ai-test-code/analyze_image.zip --trigger-event google.storage.object.finalize --trigger-resource ai-test-images
+
+gcloud pubsub topics publish image-ai-test --message "boat"
