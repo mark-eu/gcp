@@ -29,25 +29,38 @@ gcloud functions delete analyze-image --region=europe-west1 --quiet
 
 echo "import base64
 import requests
-import google.cloud.storage as gs
+from google.cloud import storage
+from google.cloud import secretmanager_v1
 from PIL import Image
 from io import BytesIO
 
-apiKey='29435784-61e2a118a3ca68296fccb9b81'
 urlBase='https://pixabay.com/api'
+secretKeyName='pixabay-key-1'
+
+def get_secret (keyName, projectName=''):
+    if not projectName:
+        headers = {'Metadata-Flavor':'Google'}
+        response = requests.get('http://metadata.google.internal/computeMetadata/v1/project/project-id', headers=headers)
+        projectName=response.text
+    client = secretmanager_v1.SecretManagerServiceClient()
+    keyPathName = 'projects/{0}/secrets/{1}/versions/latest'.format(projectName, keyName)
+    request = secretmanager_v1.AccessSecretVersionRequest(name=keyPathName)
+    response = client.access_secret_version(request=request)
+    secret = response.payload.data.decode('utf-8')
+    return(secret)
 
 def get_image (event, context):
     #find an image based on the message content
     imageQuery = base64.b64decode(event['data']).decode('utf-8')
-    response = requests.get(urlBase, params={'key':apiKey, 'safesearch':'true', 'q':imageQuery})
+    response = requests.get(urlBase, params={'key':get_secret(secretKeyName), 'safesearch':'true', 'q':imageQuery})
     jsonData=response.json()
     imageUrl=jsonData['hits'][0]['largeImageURL']
-    #Now get the actual image from its URL
+    #Now get the actual image using its URL
     imageResponse=requests.get(imageUrl)
     image = Image.open(BytesIO(imageResponse.content))
     image.save('/tmp/'+imageUrl.split('/')[-1])
     #write to cloud storage
-    gsClient = gs.Client()
+    gsClient = storage.Client()
     bucket = gsClient.get_bucket('ai-test-images')
     blob = bucket.blob(imageUrl.split('/')[-1])
     blob.metadata={'search term':imageQuery}
@@ -56,13 +69,13 @@ def get_image (event, context):
 
 echo "Pillow
 requests
-google.cloud.storage" > requirements.txt
+google.cloud.storage
+google.cloud.secret-manager" > requirements.txt
 
 zip get_image.zip main.py requirements.txt
 rm main.py
 rm requirements.txt
-gsutil cp get_image.zip gs://ai-test-code
-rm get_image.zip
+gsutil cp get_image.zip gs://ai-test-code && rm get_image.zip
 
 echo "import base64
 from google.cloud import vision_v1
@@ -119,12 +132,14 @@ google.cloud.storage" > requirements.txt
 zip analyze_image.zip main.py requirements.txt
 rm main.py
 rm requirements.txt
-gsutil cp analyze_image.zip gs://ai-test-code
-rm analyze_image.zip
+gsutil cp analyze_image.zip gs://ai-test-code && rm analyze_image.zip
 
 
-# This can help to find the list of supported event types "gcloud functions event-types list"
+# This can help to find the list of supported event types - "gcloud functions event-types list"
 gcloud functions deploy get-image --entry-point=get_image --region=europe-west1 --service-account=image-ai-account@test-01.iam.gserviceaccount.com --runtime python310 --source gs://ai-test-code/get_image.zip --trigger-event google.pubsub.topic.publish --trigger-resource image-ai-test
 gcloud functions deploy analyze-image --entry-point=analyze_image --region=europe-west1 --service-account=image-ai-account@test-01.iam.gserviceaccount.com --runtime python310 --source gs://ai-test-code/analyze_image.zip --trigger-event google.storage.object.finalize --trigger-resource ai-test-images
+printf "PUT_THE_PIXABAY_API_KEY_HERE" | gcloud secrets create pixabay-key-1 --data-file=- 
+gcloud secrets add-iam-policy-binding pixabay-key-1 --member='serviceAccount:image-ai-account@test-01.iam.gserviceaccount.com' --role='roles/secretmanager.secretAccessor'
 
 gcloud pubsub topics publish image-ai-test --message "boat"
+

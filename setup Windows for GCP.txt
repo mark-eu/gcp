@@ -3,7 +3,7 @@
 # - Copy the Google Cloud SDK to the local disk and put the bin dir in the path
 # - Install cygwin with the Git and VIM options
 # - Create an SSH key pair using "ssh-keygen -t ecdsa -C name@company.com" to use with the gcloud configuration
-# Then run the below commands in an Admin CMD window
+# Then run the below commands
 
 gcloud init
 git config --global http.proxy http://localhost:3129
@@ -18,4 +18,16 @@ pip install --upgrade requests --proxy http://localhost:3129
 pip install --upgrade websockets --proxy http://localhost:3129
 pip install --upgrade "psycopg[binary]" --proxy http://localhost:3129
 pip install --upgrade apache-beam --proxy http://localhost:3129
+pip install --upgrade google-cloud-secret-manager --proxy http://localhost:3129
 
+python -m pip install --upgrade pip
+pip install --upgrade google-cloud-firestore
+pip install --upgrade google-cloud
+pip install --upgrade Pillow
+pip install --upgrade google-cloud-vision
+pip install --upgrade google.cloud.pubsub
+pip install --upgrade requests
+pip install --upgrade websockets
+pip install --upgrade "psycopg[binary]"
+pip install --upgrade apache-beam
+pip install --upgrade google-cloud-secret-manager

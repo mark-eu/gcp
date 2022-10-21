@@ -13,6 +13,7 @@ svc_credentials = service_account.Credentials.from_service_account_file('./ai-im
 
 def analyze_image ():
     #Create the Cloud Vision client and have it analyze the new image in the GCS bucket
+    #- TESTING - THE BELOW HARDCODED NAME NEEDS TO BE A FILE THAT EXISTS IN THE GCS STORE. IN THE REAL CODE THE FILENAME COMES FROM THE GCS EVENT THAT TRIGGERS THE CLOUD FUNCTION.
     file = {'name':'g948ad59f22242d38a39b0f823f16b3fe0c353c11495635233657fb13cb274060e6113aa591600915aa678bcc899c9cb6fa6bb4d2b456b486049cbb96a1578c2f_1280.jpg'}
     vClient=vision_v1.ImageAnnotatorClient(credentials=svc_credentials)
     #Create the image source object and add the URL as a property of that object
