@@ -1,0 +1,36 @@
+# Install the following:
+# - Python and Wing IDE
+# - Copy the Google Cloud SDK to the local disk and put the bin dir in the path
+# - Install cygwin with the Git and VIM options (Windows only)
+# - Create an SSH key pair using "ssh-keygen -t ecdsa -C name@company.com" to use with the gcloud configuration
+# - Install and setup a local NTLM proxy if needed (CNTLM or a Linux equivalent)
+# - Run the below commands choosing the proxy commands or not
+
+gcloud init
+git config --global http.proxy http://localhost:3129
+
+python -m pip install --upgrade pip --proxy http://localhost:3129
+pip install --upgrade google-cloud-firestore --proxy http://localhost:3129
+pip install --upgrade google-cloud --proxy http://localhost:3129
+pip install --upgrade Pillow --proxy http://localhost:3129
+pip install --upgrade google-cloud-vision --proxy http://localhost:3129
+pip install --upgrade google.cloud.pubsub --proxy http://localhost:3129
+pip install --upgrade requests --proxy http://localhost:3129
+pip install --upgrade websockets --proxy http://localhost:3129
+pip install --upgrade "psycopg[binary]" --proxy http://localhost:3129
+pip install --upgrade apache-beam --proxy http://localhost:3129
+pip install --upgrade google-cloud-secret-manager --proxy http://localhost:3129
+pip install --upgrade google.cloud.resource-manager --proxy http://localhost:3129
+
+python -m pip install --upgrade pip
+pip install --upgrade google-cloud-firestore
+pip install --upgrade google-cloud
+pip install --upgrade Pillow
+pip install --upgrade google-cloud-vision
+pip install --upgrade google.cloud.pubsub
+pip install --upgrade requests
+pip install --upgrade websockets
+pip install --upgrade "psycopg[binary]"
+pip install --upgrade apache-beam
+pip install --upgrade google-cloud-secret-manager
+pip install --upgrade google.cloud.resource-manager

@@ -1,0 +1,7 @@
+**/.DS_Store
+**/terraform.tfstate
+**/.terraform.lock.hcl
+**/.terraform/
+**/set-env.sh
+**/*.wpr
+**/*.wpu
